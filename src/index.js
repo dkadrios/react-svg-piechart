@@ -1,5 +1,6 @@
 import React from "react"
 import PropTypes from "prop-types"
+import btoa from "btoa"
 
 import Circle from "./Circle"
 import Sectors from "./Sectors"
@@ -9,6 +10,29 @@ class PieChart extends React.Component {
   state = {
     expandedIndex: null,
   }
+
+  getLinkHref = (data, pattern) =>
+    "data:image/svg+xml;base64," +
+    btoa(` \
+    <svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'> \
+      <rect width='10' height='10' fill='${data.color}'/> \
+      ${pattern} \
+    </svg>`)
+
+  getPattern = (idx, patterns) =>
+    patterns && patterns.length ? patterns[idx] || {id: idx} : {id: idx}
+
+  transformData = (data, patterns, usePatterns) =>
+    data.map((d, idx) => ({
+      ...d,
+      patternId: usePatterns ? this.getPattern(idx, patterns).id : "",
+      patternHref: usePatterns
+        ? this.getLinkHref(d, this.getPattern(idx, patterns).pattern)
+        : "",
+      color: usePatterns
+        ? `url(#${this.getPattern(idx, patterns).id})`
+        : d.color,
+    }))
 
   static getDerivedStateFromProps(nextProps) {
     if (nextProps.expandedIndex >= 0) {
@@ -55,17 +79,20 @@ class PieChart extends React.Component {
 
   renderMultipleData(center) {
     const {expandedIndex} = this.state
-    const {data, expandOnHover, ...props} = this.props
+    const {data, expandOnHover, usePatterns, ...props} = this.props
+    const patterns = data.map(d => d.pattern)
+    const newData = this.transformData(data, patterns, usePatterns)
+
     return (
       <Sectors
         center={center}
         data={
           expandOnHover
-            ? data.map((d, i) => ({
+            ? newData.map((d, i) => ({
                 ...d,
                 expanded: i === expandedIndex,
               }))
-            : data
+            : newData
         }
         {...props}
         onSectorHover={this.handleSectorHover}
@@ -80,14 +107,40 @@ class PieChart extends React.Component {
   }
 
   render() {
-    const {data, expandSize, viewBoxSize} = this.props
+    const {data, expandSize, viewBoxSize, usePatterns} = this.props
     const center = viewBoxSize / 2
     const offset = this.shouldExpand() ? expandSize : 0
-    const dataWithValue = data.filter(d => d.value > 0)
+    const patterns = data.map(d => d.pattern)
+
+    const newData = this.transformData(data, patterns, usePatterns)
+
+    const dataWithValue = newData.filter(d => d.value > 0)
+
     return dataWithValue && dataWithValue.length > 0 ? (
       <svg
         viewBox={`0 0 ${viewBoxSize + offset * 2} ${viewBoxSize + offset * 2}`}
       >
+        {usePatterns && (
+          <defs>
+            {newData.map(d => (
+              <pattern
+                key={d.patternId}
+                id={d.patternId}
+                patternUnits="userSpaceOnUse"
+                width="5"
+                height="5"
+              >
+                <image
+                  xlinkHref={d.patternHref}
+                  x="0"
+                  y="0"
+                  width="5"
+                  height="5"
+                />
+              </pattern>
+            ))}
+          </defs>
+        )}
         <g transform={`translate(${offset}, ${offset})`}>
           {dataWithValue.length === 1
             ? this.renderSingleData(dataWithValue[0], center)
@@ -102,6 +155,7 @@ PieChart.propTypes = {
   data: PropTypes.arrayOf(
     PropTypes.shape({
       color: PropTypes.string.isRequired,
+      pattern: PropTypes.object,
       title: PropTypes.string,
       value: PropTypes.number.isRequired,
       href: PropTypes.string,
@@ -119,6 +173,7 @@ PieChart.propTypes = {
   viewBoxSize: PropTypes.number,
   transitionDuration: Sector.propTypes.transitionDuration,
   transitionTimingFunction: Sector.propTypes.transitionTimingFunction,
+  usePatterns: PropTypes.bool,
 }
 
 PieChart.defaultProps = {
@@ -136,6 +191,7 @@ PieChart.defaultProps = {
   viewBoxSize: 100,
   transitionDuration: Sector.defaultProps.transitionDuration,
   transitionTimingFunction: Sector.defaultProps.transitionTimingFunction,
+  usePatterns: false,
 }
 
 export default PieChart
